@@ -6,6 +6,78 @@
 // For all details and documentation:
 // http://documentcloud.github.com/underscore
 
+
+/**
+ * 0.4.7:
+ * ~ 优化了一些方法：
+ *   compose 不再直接对参数操作了。
+ *   这个地方展开来讲，虽然参数是按值传递的，但是大部分情况下实际是展现处引用传递的结果。所以，对于参数的操作会影响传入的实参
+ *   有的时候这个是不想这样的。所以，应该在函数内部新拷贝（浅拷贝或者深拷贝）这个参数，再进行操作比较合适
+ *   
+ *   isEqual 增加了Data实例的比较，比较数组内容前，先比较长度
+ *   对keys方法进行了优化，并且运用到了一些方法里: each isEmpty functions
+ *   增加了类型判断 isNaN isDate isNull
+ *
+ * 0.5.0
+ * ~ 增加了isReg，他们全都基于Object.toString。同时所有的类型监测仍然工作，只是他们没单独做成一个方法，在定义的时候
+ * ~ bindAll 现在传参位置发生了变化
+ * ~ functions 本来只是一个内置方法，只返回 _ 的方法名，现在可以对其他对象使用了
+ *
+ * 0.5.1
+ * ~ each 对length = 0 的数组也生效
+ * ~ 对各种迭代方法里，array的length做了数字监测，防止length被重写
+ * ~ 对各种迭代方法里，所有对于原生方法都做了 isFunction 检查，防止被重写成别的类型报错
+ * ~ 大量的对于，通篇反复调用的方法和字段，做了cache优化
+ * ~ 定义了一个 isArguments 的类型监测，具体大概是 length是数字，不可枚举，对象本身不是数组
+ * ~ 由于做了array.length isNumber的监测，isNumber 方法和其他一系列方法，用闭包的方式后调用实现
+ *   这个部分会在下文类型检测的地方重点论述
+ * 
+ * 0.5.2
+ * ~ 增加了 tap 方法，该方法主要用于在链式调用种执行特定方法
+ * ~ 居然又放弃了闭包对于类型检测的实现，同时，放弃了使用Objcet的toString方法来监测类型
+ *   改为了检查某些方法是否存在，理由是速度更加快，当然安全性会少一点
+ *   关于这个内容是这样的:
+     var i = 5;
+     var _ = {};
+ *   for (; i < 5; i++) {
+ *       var _[i] = function() {alert(i)}
+ *   }
+ *   这里当 _[1]; 调用的时候，这个i一直都会是5，因为去访问全局变量i
+ *   也就是说，这个块级作用域是没用的，是假的
+ *   可以这么hack
+ *   for (; i < 5; i++) {
+ *       (function() {
+ *         var _[i] = function() {alert(i)}
+ *       })()
+ *   }
+ *
+ *   当然，下面的赋值动作是会符合预期的
+ *   for (; i < 5; i++) {
+ *       var _[i] = i;
+ *   }
+ *   状态被保留了
+ * ~ 
+ * 
+ * 0.5.3-0.5.8
+ * ~ 对 template 方法做了一些调整不过我没怎么看这个东东
+ * ~ oop 里做了写小优化，不再对参数直接操作
+ * ~ 继续对类型检测方法进行细节优化，对通篇的方法都进行必要的类型检测
+ *
+ * 0.6.0
+ * ~ 做了each的缓存
+ * ~ 优化了函数名称，同时对注释里的别名进行了修改
+ * ~ Object.keys 方法被引入，原先没有考虑用这个，都是直接for in 出来的
+ * ~ reduceRight用了reduce方法重写了，以前用了each有点啰嗦，本质实现是一样的
+ *   同样的还有include
+ * ~ 增加了es5 原生的 isArray 判断
+ * ~ 增加了 工具函数 times，用来调用指定次数的函数
+ * ~ 对原生方法集中提取，塞入各个方法里，重写整理
+ * ~ isEmpty 又优化了一下，具体下文类型检测要好好看看
+ * ~ 在include里干掉了fnc类型？下文仔细看看
+ * ~ bind函数默认使用空对象？以前是this
+ * ~ 增加了_mixin工具函数
+ * ~ 【对于对象和数组的处理，现在统一原则是能枚举，同时是自身属性】 【important】 【important】 【important】
+ */
 (function() {
   // ------------------------- Baseline setup ---------------------------------
 
@@ -167,8 +239,11 @@
 
   // Determine if a given value is included in the array or object using '==='.
   _.include = function(obj, target) {
+    // 有原生则是数组，则用原生数组方法
     if (nativeIndexOf && obj.indexOf === nativeIndexOf) return obj.indexOf(target) != -1;
     var found = false;
+    // 否则都直接 each 出来
+    // 记得上一版本的实现好像fnc也可以，算了忘记了，反正优化了,这个没毛病
     each(obj, function(value) {
       if (found = value === target) _.breakLoop();
     });
@@ -363,6 +438,9 @@
   _.bind = function(func, obj) {
     var args = _.rest(arguments, 2);
     return function() {
+      // 这里本来是 window
+      // 现在改成了这个临时内存 可能是为了防止主动去找到一些方法，或者操作改变外部作用域的一些状况
+      // 这个可以理解为是一种兜底保护行为
       return func.apply(obj || {}, args.concat(_.toArray(arguments)));
     };
   };
@@ -416,10 +494,10 @@
 
   // Retrieve the names of an object's properties.
   // Delegates to ECMA5's native Object.keys
-  _.keys = nativeKeys || function(obj) {
-    if (_.isArray(obj)) return _.range(0, obj.length);
+  _.keys = nativeKeys || function(obj) { // 用原生的
+    if (_.isArray(obj)) return _.range(0, obj.length); // 这个就用range处理了，从0开始 step为1，长度为obj.length
     var keys = [];
-    for (var key in obj) if (hasOwnProperty.call(obj, key)) keys.push(key);
+    for (var key in obj) if (hasOwnProperty.call(obj, key)) keys.push(key); // 能枚举，又是自身属性，则处理出来
     return keys;
   };
 
@@ -429,6 +507,7 @@
   };
 
   // Return a sorted list of the function names available on the object.
+  // 在一维上，把对象的方法反出来
   _.functions = function(obj) {
     return _.filter(_.keys(obj), function(key){ return _.isFunction(obj[key]); }).sort();
   };
@@ -447,6 +526,7 @@
 
   // Invokes interceptor with the obj, and then returns obj.
   // The primary purpose of this method is to "tap into" a method chain, in order to perform operations on intermediate results within the chain.
+  // 这个用于链式调用的时候，执行传入方法，同时不打断链式调用。因为return 的是 obj，obj进过chain oop之后是一个 对象实例，同时 __proto__ 拥有一切方法
   _.tap = function(obj, interceptor) {
     interceptor(obj);
     return obj;
@@ -466,11 +546,14 @@
     // One of them implements an isEqual()?
     if (a.isEqual) return a.isEqual(b);
     // Check dates' integer values.
+    // 新增加的Date比较
     if (_.isDate(a) && _.isDate(b)) return a.getTime() === b.getTime();
     // Both are NaN?
+    // 都是NaN的时候反的是true，更加符合逻辑
     if (_.isNaN(a) && _.isNaN(b)) return true;
     // Compare regular expressions.
     if (_.isRegExp(a) && _.isRegExp(b))
+      // 这个是正则比较，新加的，主要比较正则对象的下面四个字段
       return a.source     === b.source &&
              a.global     === b.global &&
              a.ignoreCase === b.ignoreCase &&
@@ -480,8 +563,10 @@
     // Check for different array lengths before comparing contents.
     if (a.length && (a.length !== b.length)) return false;
     // Nothing else worked, deep compare the contents.
+    // 先看长度，再看内容
     var aKeys = _.keys(a), bKeys = _.keys(b);
     // Different object sizes?
+    // 先看长度，再看内容
     if (aKeys.length != bKeys.length) return false;
     // Recursive comparison of contents.
     for (var key in a) if (!_.isEqual(a[key], b[key])) return false;
@@ -568,6 +653,7 @@
 
   // Run a function n times.
   _.times = function (n, iterator, context) {
+    // 根据传入的次数和迭代器，执行指定次数，同时可以指定上下文
     for (var i = 0; i < n; i++) iterator.call(context, i);
   };
 
@@ -578,6 +664,7 @@
 
   // Add your own custom functions to the Underscore object, ensuring that
   // they're correctly added to the OOP wrapper as well.
+  // 这个意思应该是说，会把你传入的方法添加到 wrapper 的原型对象上
   _.mixin = function(obj) {
     each(_.functions(obj), function(name){
       addToWrapper(name, _[name] = obj[name]);
@@ -646,6 +733,7 @@
   };
 
   // A method to easily add functions to the OOP wrapper.
+  // 这里把对象处理到原形对象上
   var addToWrapper = function(name, func) {
     wrapper.prototype[name] = function() {
       var args = _.toArray(arguments);
@@ -655,6 +743,7 @@
   };
 
   // Add all of the Underscore functions to the wrapper object.
+  // 先挂所有 _ 方法
   _.mixin(_);
 
   // Add all mutator Array functions to the wrapper.
