@@ -13,35 +13,38 @@ window._ = {
     
   // The cornerstone, an each implementation.
   // Handles objects implementing forEach, each, arrays, and raw objects.
+
   each : function(obj, iterator, context) {
     var index = 0;
+    // 迭代过程中使用 throw 来模拟 break
     try {
-      if (obj.forEach) { // 兼容到ie9
+        // 下文中所有方法都会优先尝试原生方法，不行再进行Polyfill
+        // 只有极少部分方法和原生方法的使用略有不同
+        if (obj.forEach) { 
         obj.forEach(iterator, context);
       } else if (obj.length) {
-        // 数组情况处理
-        // 这里没有安全实现forEach的功能。传入的实参是按值传递，没有实现forEach左右一个参数按照引用传递的功能
+        // 数组处理, 类型校验略显不足
+        // 和原生forEach略有不同，缺少最后一个参数
         for (var i=0; i<obj.length; i++) iterator.call(context, obj[i], i);
       } else if (obj.each) {
-        // 这里故意这么做的吧？大概率是像枚举自身 _ 的时候：_.each(_, () => {})
-        // 可能不想对 _ 重新操作，同时对于普通对象，也存在each的方法的情况就执行函数
+        // 这段可能为了处理 _ 自身情况？后来版本删了
         obj.each(function(value) { iterator.call(context, value, index++); });
       } else {
+        // 对象处理
         var i = 0;
         for (var key in obj) {
           var value = obj[key], pair = [key, value];
           pair.key = key;
           pair.value = value;
+          // 这里迭代方法的传参和理想的有所不同，后来版本修正了
           iterator.call(context, pair, i++);
         }
-        // 这里的参数形式是，第二个参数是index 第一个参数是数组[a, 1, key: 'a', value: 1]
       }
     } catch(e) {
-      // 用error 来控制一个函数整个程序的终止
-      // 一旦抛出错误，整个程序都会终止，这里是为了跳出迭代
       if (e != '__break__') throw e;
     }
-    return obj; // 返回对象本身，可以链式调用
+    // 返回对象本身，可以链式调用。原生 forEach 没有返回值
+    return obj; 
   },
   
   // Return the results of applying the iterator to each element. Use Javascript
@@ -52,13 +55,11 @@ window._ = {
     _.each(obj, function(value, index) {
       results.push(iterator.call(context, value, index));
     });
-    return results; // 返回结果
+    return results; // 返回结果和原生效果一致
   },
   
   // Inject builds up a single result from a list of values. Also known as
   // reduce, or foldl.
-  // 模拟 reduce ，兼容到ie9，这里大部分方法都没有把自身对象当作引用传入的功能，下文不再论述
-  // 这个函数，初始值强制传入，和reduce不同。所以迭代次数会是对象长度。这样更加便于理解
   inject : function(obj, memo, iterator, context) {
     _.each(obj, function(value, index) {
       memo = iterator.call(context, memo, value, index);
@@ -67,13 +68,13 @@ window._ = {
   },
   
   // Return the first value which passes a truth test.
-  // 相当于find，兼容到ie9
   detect : function(obj, iterator, context) {
     var result;
     _.each(obj, function(value, index) {
       if (iterator.call(context, value, index)) {
         result = value;
-        throw '__break__'; // 抛出错误的方式来控制迭代的结束
+        // 所有函数内部一旦有 error 被 throw ,该函数立刻终止
+        throw '__break__';
       }
     });
     return result;
@@ -81,11 +82,12 @@ window._ = {
   
   // Return all the elements that pass a truth test. Use Javascript 1.6's
   // filter(), if it exists.
-  // 相当 filter，兼容到ie9
   select : function(obj, iterator, context) {
     if (obj.filter) return obj.filter(iterator, context);
     var results = [];
     _.each(obj, function(value, index) {
+      // 细节：这个地方，用强制多态来处理。而不是和 布尔 比值
+      // 是符合真实的 filter 的效果的
       if (iterator.call(context, value, index)) results.push(value);
     });
     return results;
@@ -103,12 +105,13 @@ window._ = {
   
   // Determine whether all of the elements match a truth test. Delegate to
   // Javascript 1.6's every(), if it is present.
-  // 相当于every，兼容到ie9。是否都为真，返回布尔
+  // 相当于every 判断集合迭代过后 是否都为真，返回布尔
   all : function(obj, iterator, context) {
     iterator = iterator || function(v){ return v; };
     if (obj.every) return obj.every(iterator, context);
-    var result = true;
+    var result = true; 
     _.each(obj, function(value, index) {
+      // 这个地方是不是多余了？应该没有必要给给初始值验真
       result = result && !!iterator.call(context, value, index);
       if (!result) throw '__break__';
     });
@@ -117,7 +120,7 @@ window._ = {
   
   // Determine if at least one element in the object matches a truth test. Use
   // Javascript 1.6's some(), if it exists.
-  // 相当于some，兼容到ie9。是否有真的，返回布尔。
+  // 相当于some 判断集合迭代过后 是否有真的，返回布尔。
   any : function(obj, iterator, context) {
     iterator = iterator || function(v) { return v; };
     if (obj.some) return obj.some(iterator, context);
@@ -132,7 +135,6 @@ window._ = {
   // based on '==='.
   // 基于 === 比较，返回布尔值
   include : function(obj, target) {
-    // es6的Array.prototype.includes 可以考虑
     if (_.isArray(obj)) return _.indexOf(obj, target) != -1;
     var found = false;
     _.each(obj, function(pair) {
@@ -145,17 +147,19 @@ window._ = {
   },
   
   // Invoke a method with arguments on every item in a collection.
-  // 对目标对象调用目标方法，多余的参数为方法的实参。
+  // 对 集合中的每个目标对象 调用 目标方法，多余的参数为方法的实参。
   // 返回每个执行结果的合集
   invoke : function(obj, method) {
-    var args = _.toArray(arguments).slice(2); // 抽取参数
+    // 抽取参数，2 因为除去 目标对象 和 目标方法 之外的才是目标方法的实参
+    var args = _.toArray(arguments).slice(2); 
     return _.map(obj, function(value) { // map 返回合集
-      return (method ? value[method] : value).apply(value, args); // apply 数组方式传参数
+      // 如果没有目标方法，则就是单纯 map 的效果
+      return (method ? value[method] : value).apply(value, args); // apply 接受数组
     });
   },
   
   // Optimized version of a common use case of map: fetching a property.
-  // 从目标对象里，拿目标键的数组集合
+  // 从集合对象中，拿每个对象的目标键的数组集合
   pluck : function(obj, key) {
     var results = [];
     _.each(obj, function(value){ results.push(value[key]); });
@@ -163,19 +167,28 @@ window._ = {
   },
   
   // Return the maximum item or (item-based computation).
-  // 尝试拿目标对象，或者经过迭代之后的最大值
+  // 尝试对集合中每个目标对象，或者经过迭代之后的最大值
   max : function(obj, iterator, context) {
-    if (!iterator && _.isArray(obj)) return Math.max.apply(Math, obj); // 注意此处，有不可比对象（非数字），会返回NaN
+    // 没有迭代器，同时传入了一个数组，则直接尝试对数组比较得出最大值
+    // 如果数组中有 经过强转后还是 NaN 的对象，则返回NaN
+    if (!iterator && _.isArray(obj)) return Math.max.apply(Math, obj);
     var result;
-    // 不是数组是对象，赋值迭代器的执行结果或者迭代值本身做检查
+
+    // 其他情况统一迭代传入的集合对象
     _.each(obj, function(value, index) {
+      // 这里弄一个缓存值，有迭代器的情况下缓存是迭代器的执行结果，没有则就是正在迭代的值
       var computed = iterator ? iterator.call(context, value, index) : value;
+
       /**
        * 下面的 == null 
        * 其实考虑了返回undef 和 null还有未初始化的情况，值得学习
        * 同时下面这个记录比值方法也不错
        */
-      // 这下面的一系列比值，可以温习一下数据类型比较，大概意思是不同类型的先toString一下，然后在搞
+
+      // 这个比值方法的对象里，computed是用来比较的，value是最后输出结果的
+      // 在 >= 的比较里，会进行强制多态的转换
+      // 不过这个方法本质上是为了快速得出数字的最大值，所以无需关心 
+      // 传入对象的情况也很少
       if (result == null || computed >= result.computed) result = {value : value, computed : computed};
     });
     return result.value;
@@ -197,8 +210,13 @@ window._ = {
   // 假设按照迭代器的sort处理过后，下面的数组会如何排列，返回的是原值
   // sort方法熟悉一下:
   // arr.sort((a,b) => {return 0});
-  // 这个只要return里的结果通过多态后，不是正数，则正在比较的放在左边
+  // 这个只要return里的结果通过多态后，不是正数，则正在比较的放在左边，最终达到重新排序的目的
   sortBy : function(obj, iterator, context) {
+    // 最终是 pluck 一个数组的 value
+    // 这个数组是一个 对象集合
+    // 这个对象集合的value值上保留了原始信息，但是顺序是经过sort方法处理过的
+    // 这个sort方法处理时候的比值是 传入迭代方法的返回值
+    // 实战中用处应该不大
     return _.pluck(_.map(obj, function(value, index) {
       return {
         value : value,
@@ -212,7 +230,6 @@ window._ = {
   
   // Use a comparator function to figure out at what index an object should
   // be inserted so as to maintain order. Uses binary search.
-  // 假如插入一个值，这个值按照迭代器的sort，会在那个位置，返回位置
   // 实战中没卵用
   sortedIndex : function(array, obj, iterator) {
     iterator = iterator || function(val) { return val; };
@@ -240,7 +257,7 @@ window._ = {
   
   // Return the number of elements in an object.
   size : function(obj) {
-    // 针对对象的话，也是拿可枚举keys的个数，较为鸡肋。 Object.keys().length ? 更加易懂，兼容到es6
+    // 针对对象的话，也是拿可枚举keys的个数
     return _.toArray(obj).length; 
   },
   
@@ -263,7 +280,7 @@ window._ = {
   },
   
   // Return a completely flattened version of an array.
-  // 把数组展开到一维。这里返回有个递归
+  // 把数组展开到一维。这里有个递归
   flatten : function(array) {
     return _.inject(array, [], function(memo, value) {
       if (_.isArray(value)) return memo.concat(_.flatten(value)); // 递归调用，最终会合并成一个数组输出
@@ -273,24 +290,31 @@ window._ = {
   },
   
   // Return a version of the array that does not contain the specified value(s).
-  // 返回去除指定目标值后的数组，这个是基于 === 对引用类型作用不大
+  // 返回去除指定目标值后的数组，多余的参数就是要去除的目标值
   without : function(array) {
     // 以前取数组参数的方法并转字符串是这样的
-    // 这里为什么不截取一下？取 array.slice.call(arguments, 1)? 应该结果是一样的测试过
-    var values = array.slice.call(arguments, 0); 
-    return _.select(array, function(value){ return !_.include(values, value); });
+    var values = array.slice.call(arguments, 0); // 参数数组化，没有自己的 _.toArray 方法
+
+    // 这里就是把要去除值得数组迭代，返回不包含参数的数组（因为参数就是要去掉的值）
+    return _.select(array, function(value){ return !_.include(values, value); }); // filter
   },
   
   // Produce a duplicate-free version of the array. If the array has already
   // been sorted, you have the option of using a faster algorithm.
-  // 基于 === 的去重，如果知道数组以及排序过了，就用 更快的处理方式
+  // 基于 === 的去重，
+  // 如果知道数组以及排序过了，就用 更快的处理方式: isSorted 传true
   uniq : function(array, isSorted) {
+    // inject 就是 reduce，初始值是 []
     return _.inject(array, [], function(memo, el, i) {
-      // 注意这个去重，缓存里不包含的时候推入
-      // 如果排序过，直接用last推入，这样是合理的
+      // 如果排序过，直接顺序比值，如果有不同则推入结果
+
       // es6有新的去重方式：
       // var arr = [1,2,{a:1},{a:1}];
       // var resultarr = [...new Set(arr)]; =>  [1,2,{a:1},{a:1}]   真实有效，对引用类型也管用
+
+      // 这个第一把，会推入一次。然后再去走 || 后面的，后面的直接用正在迭代的值在memo里做 include
+      // 没有则推入，有则不做动作
+      // 迭代完就做到了去重
       if (0 == i || (isSorted ? _.last(memo) != el : !_.include(memo, el))) memo.push(el);
       return memo;
     });
@@ -298,12 +322,21 @@ window._ = {
   
   // Produce an array that contains every item shared between all the 
   // passed-in arrays.
-  // 取数组交集
+  // 取传入的多个数组的集合
   intersect : function(array) {
-    var rest = _.toArray(arguments).slice(1); // 拿待比较的两个数组
-    return _.select(_.uniq(array), function(item) { // 最终return的是一纬值的集合
-      return _.all(rest, function(other) { 
-        // 用迭代的项目和正在比较的项目做对比 ，看看是否在项目里
+    var rest = _.toArray(arguments).slice(1); // 去掉第一项以后的等待取交集的数组的数组集合
+
+    /**
+     * 1. 先对待比较第一项自身去重
+     * 2. 然后迭代去重后的结果，迭代使用的是 filter 用来返回最后的交集数组
+     * 3. 迭代动作里，去处理参数数组集合
+     * 4. 主要看第一项里正在迭代的值是不是都在不在其他多个数组里
+     * 5. 是的话最终会返回 true 作为最后的交集输出
+     */
+
+     // 这里多个 return 和 函数把作用域链弄的很长，不过都是能取到的
+    return _.select(_.uniq(array), function(item) { // select => filter
+      return _.all(rest, function(other) { // all => every
         return _.indexOf(other, item) >= 0;
       });
     });
@@ -311,24 +344,27 @@ window._ = {
   
   // Zip together multiple lists into a single array -- elements that share
   // an index go together.
-  // 把传入的数组，按照位置在一维上一一对应，组成新数组
+  // 传入多个数组，按照位置在一维上一一对应，组成新数组
   zip : function() {
     var args = _.toArray(arguments);
-    var length = _.max(_.pluck(args, 'length')); // 去最大长度来决定迭代次数
+    var length = _.max(_.pluck(args, 'length')); // 这些传入数值中的最大长度来决定迭代次数
     var results = new Array(length);
-    for (var i=0; i<length; i++) results[i] = _.pluck(args, String(i)); // 新数组每项位置都pluck来实现核心功能
+
+    // _.zip([1, 2, 3], [2, 3, 3, 6], [8, 8]) => [[1,2,8],[2,3,8],[3,3,undef],[undef,6,undef]]
+    for (var i=0; i<length; i++) results[i] = _.pluck(args, String(i)); // 下标用字符串拿
+
     return results;
   },
   
   // If the browser doesn't supply us with indexOf (I'm looking at you, MSIE), 
   // we need this function. Return the position of the first occurence of an 
   // item in an array, or -1 if the item is not included in the array.
+  // 基于 === 的indexOf , 返回下标和原生的表现一致
   indexOf : function(array, item) {
-    // 有indexOf则使用array的indexOf，兼容到ie9
     if (array.indexOf) return array.indexOf(item);
     // 做hack处理
     var length = array.length;
-    for (i=0; i<length; i++) if (array[i] === item) return i;
+    for (var i=0; i<length; i++) if (array[i] === item) return i;
     return -1;
   },
   
@@ -336,25 +372,27 @@ window._ = {
   
   // Create a function bound to a given object (assigning 'this', and arguments,
   // optionally). Binding with arguments is also known as 'curry'.
-  // 这个curry需要研究一下
-  // 这里就是类似function的bind方法，返回fnc 兼容到ie9
+  // 这里就是 function 的 bind 方法
+  // bind 也可以认为是一个 curry 函数，它只会去给传入的纯函数创造不同上下文，作为一个副本
   bind : function(func, context) {
     if (!context) return func; // 没上下文，直接返回
     var args = _.toArray(arguments).slice(2); // 多余的认为是参数
+
+    // 返回闭包，保持了 args、context 的状态来供访问
+    // 认为是副本的原因是，返回的是一个匿名函数封包，不会影响原函数
     return function() {
       var a = args.concat(_.toArray(arguments));
-      return func.apply(context, a); // apply调用参数
+      return func.apply(context, a);
     };
   },
   
   // Bind all of an object's methods to that object. Useful for ensuring that 
   // all callbacks defined on an object belong to it.
-  // 给对象里的自定义方法的this指针，绑在这个对象上面
+  // 为多个方法 bind 相同的上下文，批量操作
   // _.bindAll(*methodNames, context)
   bindAll : function() {
-    debugger
     var args = _.toArray(arguments); // 拿参
-    var context = args.pop(); // 返回最后一个，上下文对象
+    var context = args.pop(); // 返回最后一个实参(上下文对象), pop已经删除了这个最后一项了
     _.each(args, function(methodName) { // 迭代参数
       // 上下文的方法名 使用 bind 绑定this
       // 不过这里为什么不把上下文对象本身排除掉，其实向上仔细看，pop方法已经删掉了上下文对象了
@@ -380,7 +418,7 @@ window._ = {
   // Returns the first function passed as an argument to the second, 
   // allowing you to adjust arguments, run code before and after, and 
   // conditionally execute the original function.
-  // 这一条仔细看了，确实没啥卵用
+  // 放弃，没卵用
   wrap : function(func, wrapper) {
     return function() {
       var args = [func].concat(_.toArray(arguments));
@@ -391,34 +429,36 @@ window._ = {
   /* ------------------------- Object Functions: ---------------------------- */
   
   // Retrieve the names of an object's properties.
-  // 和Object.keys() 一样，兼容到ie9
-  // 这个传 key 能拿到的原因是，each里面针对对象返回的是 [a, 1, key: 'a', value: '1']
+  // 返回对象的key集合
   keys : function(obj) {
+    // 这个传 key 能拿到的原因是，each里面针对对象返回的是[a, 1, key: 'a', value: '1']
     return _.pluck(obj, 'key');
   },
   
   // Retrieve the values of an object's properties.
-  // 同上
+  // 返回对象的value集合，原理同上
   values : function(obj) {
     return _.pluck(obj, 'value');
   },
   
   // Extend a given object with all of the properties in a source object.
-  // 源对象的可枚举属性，扔到目标对象上。浅拷贝
+  // 把源对象的可枚举属性，扔到目标对象上(浅拷贝)
   extend : function(destination, source) {
     for (var property in source) destination[property] = source[property];
     return destination;
   },
   
   // Create a (shallow-cloned) duplicate of an object.
-  // 浅拷贝，类似于Object.assign({},obj) es6方法
+  // 浅拷贝，类似于Object.assign({},obj)
+  // underscore一直没有提供深拷贝方法，作者认为做不完美，所以不做
   clone : function(obj) {
     return _.extend({}, obj);
   },
   
   // Perform a deep comparison to check if two objects are equal.
-  // 这里是一个非常好的深度比较方法，比较值是否相等。
+  // 这里是一个非常好的深度比较方法，比较值是否相等
   // 即使是引用类型，只要他们表示的值相等。也报相等
+  // 以后版本这个比较被反复修改过，可以处理的比较符合容易想到的逻辑效果
   isEqual : function(a, b) {
     // Check object identity.
     if (a === b) return true; // 全等就直接过
@@ -448,6 +488,7 @@ window._ = {
   },
   
   // Is a given value a DOM element?
+  // nodeType === 1 的元素是 DOM节点
   isElement : function(obj) {
     return !!(obj && obj.nodeType == 1);
   },
@@ -473,7 +514,6 @@ window._ = {
   // Generate a unique integer id (unique within the entire client session).
   // Useful for temporary DOM ids.
   // 在_对象上，挂载一个累加的id号，可以拼上前缀
-  // 用途应该不大
   uniqueId : function(prefix) {
     var id = this._idCounter = (this._idCounter || 0) + 1;
     return prefix ? prefix + id : id;
@@ -481,7 +521,7 @@ window._ = {
   
   // Javascript templating a-la ERB, pilfered from John Resig's 
   // "Secrets of the Javascript Ninja", page 83.
-  // 有空研究，一种模板处理方式
+  // 放弃，无卵用
   template : function(str, data) {
     var fn = new Function('obj', 
       'var p=[],print=function(){p.push.apply(p,arguments);};' +
