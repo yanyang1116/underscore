@@ -19,12 +19,13 @@ window._ = {
     // 迭代过程中使用 throw 来模拟 break
     try {
         // 下文中所有方法都会优先尝试原生方法，不行再进行Polyfill
-        // 只有极少部分方法和原生方法的使用略有不同
         if (obj.forEach) { 
         obj.forEach(iterator, context);
       } else if (obj.length) {
         // 数组处理, 类型校验略显不足
-        // 和原生forEach略有不同，缺少最后一个参数
+        // 下s文都用了这个函数，其实少了最后一个参数迭代对象本身，下文不再论述。
+        // s实际使用中，后面两个形参都是引用
+        // 下面的这个方法是整个 underscore 的核心方法，本质上是当前函数的 arguments 对象和相关变量环境的维持穿插
         for (var i=0; i<obj.length; i++) iterator.call(context, obj[i], i);
       } else if (obj.each) {
         // 这段可能为了处理 _ 自身情况？后来版本删了
@@ -36,14 +37,14 @@ window._ = {
           var value = obj[key], pair = [key, value];
           pair.key = key;
           pair.value = value;
-          // 这里迭代方法的传参和理想的有所不同，后来版本修正了
+          // 这里迭代方法的传参不太合理，后来版本修正了
           iterator.call(context, pair, i++);
         }
       }
     } catch(e) {
       if (e != '__break__') throw e;
     }
-    // 返回对象本身，可以链式调用。原生 forEach 没有返回值
+    // 返回对象本身（这里是同一引用），可以链式调用。原生 forEach 没有返回值
     return obj; 
   },
   
@@ -55,11 +56,13 @@ window._ = {
     _.each(obj, function(value, index) {
       results.push(iterator.call(context, value, index));
     });
-    return results; // 返回结果和原生效果一致
+    return results;
   },
   
   // Inject builds up a single result from a list of values. Also known as
   // reduce, or foldl.
+  // 原生用的时候推荐加上默认值，不然会少迭代一次
+  // 这个 inject 方法会强制传一个默认值
   inject : function(obj, memo, iterator, context) {
     _.each(obj, function(value, index) {
       memo = iterator.call(context, memo, value, index);
@@ -73,7 +76,7 @@ window._ = {
     _.each(obj, function(value, index) {
       if (iterator.call(context, value, index)) {
         result = value;
-        // 所有函数内部一旦有 error 被 throw ,该函数立刻终止
+        // 所有函数内部一旦有 error 被 throw ,该函数立刻终止s
         throw '__break__';
       }
     });
@@ -86,7 +89,7 @@ window._ = {
     if (obj.filter) return obj.filter(iterator, context);
     var results = [];
     _.each(obj, function(value, index) {
-      // 细节：这个地方，用强制多态来处理。而不是和 布尔 比值
+      // 细节：这个地方，用强制多态来处理。考虑到了多种情况的返回值，不过个人认为写清楚会增强语意
       // 是符合真实的 filter 的效果的
       if (iterator.call(context, value, index)) results.push(value);
     });
@@ -120,7 +123,7 @@ window._ = {
   
   // Determine if at least one element in the object matches a truth test. Use
   // Javascript 1.6's some(), if it exists.
-  // 相当于some 判断集合迭代过后 是否有真的，返回布尔。
+  // 相当于some 判断集合迭代过后是否有真的，返回布尔。
   any : function(obj, iterator, context) {
     iterator = iterator || function(v) { return v; };
     if (obj.some) return obj.some(iterator, context);
@@ -147,7 +150,7 @@ window._ = {
   },
   
   // Invoke a method with arguments on every item in a collection.
-  // 对 集合中的每个目标对象 调用 目标方法，多余的参数为方法的实参。
+  // 对集合中的每个目标对象 调用 目标方法，多余的参数为方法的实参。
   // 返回每个执行结果的合集
   invoke : function(obj, method) {
     // 抽取参数，2 因为除去 目标对象 和 目标方法 之外的才是目标方法的实参
@@ -167,7 +170,9 @@ window._ = {
   },
   
   // Return the maximum item or (item-based computation).
-  // 尝试对集合中每个目标对象，或者经过迭代之后的最大值
+  // 尝试对集合中每个目标对象，或者
+  // 经过迭代之后的返回值，取最大值
+  // 里面有一个 迭代壁纸的 computed 可以看看
   max : function(obj, iterator, context) {
     // 没有迭代器，同时传入了一个数组，则直接尝试对数组比较得出最大值
     // 如果数组中有 经过强转后还是 NaN 的对象，则返回NaN
@@ -182,7 +187,7 @@ window._ = {
       /**
        * 下面的 == null 
        * 其实考虑了返回undef 和 null还有未初始化的情况，值得学习
-       * 同时下面这个记录比值方法也不错
+       * 写清楚增强语意比较好
        */
 
       // 这个比值方法的对象里，computed是用来比较的，value是最后输出结果的
@@ -207,39 +212,40 @@ window._ = {
   },
   
   // Sort the object's values by a criteria produced by an iterator.
-  // 假设按照迭代器的sort处理过后，下面的数组会如何排列，返回的是原值
+  // 迭代器的返回值处理之后，这些迭代对象本身应该如何排序
   // sort方法熟悉一下:
   // arr.sort((a,b) => {return 0});
   // 这个只要return里的结果通过多态后，不是正数，则正在比较的放在左边，最终达到重新排序的目的
   sortBy : function(obj, iterator, context) {
-    // 最终是 pluck 一个数组的 value
-    // 这个数组是一个 对象集合
-    // 这个对象集合的value值上保留了原始信息，但是顺序是经过sort方法处理过的
-    // 这个sort方法处理时候的比值是 传入迭代方法的返回值
-    // 实战中用处应该不大
+    // 这里假设了一个固定顺序的数组，一个是原来的值，一个是迭代器处理之后的值
     return _.pluck(_.map(obj, function(value, index) {
       return {
         value : value,
         criteria : iterator.call(context, value, index)
       };
+      // 上面处理成了一个大数组
+      // 然后进入sort方法专门只是比较criteria然后返回一个经过排序后的数组
     }).sort(function(left, right) {
       var a = left.criteria, b = right.criteria;
       return a < b ? -1 : a > b ? 1 : 0;
+      // 最后这里只抓取原值——value
     }), 'value');
   },
   
   // Use a comparator function to figure out at what index an object should
   // be inserted so as to maintain order. Uses binary search.
-  // 实战中没卵用
+  // 这个方法是说，如果要插入一个值，这个值会按照sort方法排在现有队列的什么位置
+  // 返回坐标，应该没什么卵用实战中
   sortedIndex : function(array, obj, iterator) {
     iterator = iterator || function(val) { return val; };
     var low = 0, high = array.length;
-    // 这个while循环可以看看 while的速度比 【for loop】 快10万倍
+    // 这个while循环可以看看 while的速度比【for loop】快
     while (low < high) {
-      // 位操作符，向下取中位数，这个方法可以学学
-      // 说到这个位操作符，还有一个值得学的
-      // '-2147483.647' >> 0  这个可以快速parseInt，不过可读性不行
-      // 这个执行效率大概是 parseint的 8 倍，但是有部分值执行的时候有bug
+      /**
+       * 位操作符可以看下:
+       * 1.22 > 0，这个可以向下取整，返回1，其实就是快速parseInt，效率更高一点
+       * 4.2 >> 1，这个是算平均数然后向下取整，返回2
+       */
       var mid = (low + high) >> 1; 
       iterator(array[mid]) < iterator(obj) ? low = mid + 1 : high = mid;
     }
@@ -248,7 +254,8 @@ window._ = {
   
   // Convert anything iterable into a real, live array.
   // 尝试将所有类型转化成数组对象
-  // 这个想到类数组转数组的es6方法 Array.from
+  // 这个想到类数组转数组的es6方法Array.from
+  // 大多是一维上的尝试转数组
   toArray : function(iterable) {
     if (!iterable) return []; // 多态假值，直接空
     if (_.isArray(iterable)) return iterable; // 是数组就还是数组
@@ -280,7 +287,7 @@ window._ = {
   },
   
   // Return a completely flattened version of an array.
-  // 把数组展开到一维。这里有个递归
+  // 把数组展开到一维，这里有个递归
   flatten : function(array) {
     return _.inject(array, [], function(memo, value) {
       if (_.isArray(value)) return memo.concat(_.flatten(value)); // 递归调用，最终会合并成一个数组输出
@@ -302,19 +309,17 @@ window._ = {
   // Produce a duplicate-free version of the array. If the array has already
   // been sorted, you have the option of using a faster algorithm.
   // 基于 === 的去重，
-  // 如果知道数组以及排序过了，就用 更快的处理方式: isSorted 传true
+  // 如果知道数组以及排序过了，就用更快的处理方式: isSorted 传true
   uniq : function(array, isSorted) {
     // inject 就是 reduce，初始值是 []
     return _.inject(array, [], function(memo, el, i) {
+      /**
+       * es6有新的去重方式：
+       * var arr = [1,2,{a:1},{a:1}];
+       * var resultarr = [...new Set(arr)]; =>  [1,2,{a:1},{a:1}] 真实有效，对引用类型也管用
+       */
       // 如果排序过，直接顺序比值，如果有不同则推入结果
-
-      // es6有新的去重方式：
-      // var arr = [1,2,{a:1},{a:1}];
-      // var resultarr = [...new Set(arr)]; =>  [1,2,{a:1},{a:1}]   真实有效，对引用类型也管用
-
-      // 这个第一把，会推入一次。然后再去走 || 后面的，后面的直接用正在迭代的值在memo里做 include
-      // 没有则推入，有则不做动作
-      // 迭代完就做到了去重
+      // 这里的!=，后面版本有修正，不然就不是基于 === 的比较了
       if (0 == i || (isSorted ? _.last(memo) != el : !_.include(memo, el))) memo.push(el);
       return memo;
     });
@@ -322,19 +327,16 @@ window._ = {
   
   // Produce an array that contains every item shared between all the 
   // passed-in arrays.
-  // 取传入的多个数组的集合
+  // 取传入多个数组的交集
   intersect : function(array) {
-    var rest = _.toArray(arguments).slice(1); // 去掉第一项以后的等待取交集的数组的数组集合
+    // 剩余的等替代取交集的数组（去掉了第一项）
+    var rest = _.toArray(arguments).slice(1); 
 
     /**
-     * 1. 先对待比较第一项自身去重
-     * 2. 然后迭代去重后的结果，迭代使用的是 filter 用来返回最后的交集数组
-     * 3. 迭代动作里，去处理参数数组集合
-     * 4. 主要看第一项里正在迭代的值是不是都在不在其他多个数组里
-     * 5. 是的话最终会返回 true 作为最后的交集输出
+     * 1. 先对第一项自身去重
+     * 2. 然后使用第一项，在后面的条件里过滤（filter）。
+     * 3. 过滤的条件是，是否无这一项都能在后面的数组里找到
      */
-
-     // 这里多个 return 和 函数把作用域链弄的很长，不过都是能取到的
     return _.select(_.uniq(array), function(item) { // select => filter
       return _.all(rest, function(other) { // all => every
         return _.indexOf(other, item) >= 0;
@@ -345,12 +347,14 @@ window._ = {
   // Zip together multiple lists into a single array -- elements that share
   // an index go together.
   // 传入多个数组，按照位置在一维上一一对应，组成新数组
+  // _.zip([1, 2, 3], [2, 3, 3, 6], [8, 8]) => [[1, 2, 8], [2 ,3 ,8], [3, 3, undef], [undef, 6, undef]]
   zip : function() {
     var args = _.toArray(arguments);
-    var length = _.max(_.pluck(args, 'length')); // 这些传入数值中的最大长度来决定迭代次数
+    var length = _.max(_.pluck(args, 'length')); // 最大长度来决定输出的最终长度和迭代的次数
     var results = new Array(length);
 
-    // _.zip([1, 2, 3], [2, 3, 3, 6], [8, 8]) => [[1,2,8],[2,3,8],[3,3,undef],[undef,6,undef]]
+    // 下面这个地方，是对一维上的每一项，拿到精准的key返回出来
+    // 然后没想迭代赋值，就形成了最终的结果
     for (var i=0; i<length; i++) results[i] = _.pluck(args, String(i)); // 下标用字符串拿
 
     return results;
@@ -362,7 +366,6 @@ window._ = {
   // 基于 === 的indexOf , 返回下标和原生的表现一致
   indexOf : function(array, item) {
     if (array.indexOf) return array.indexOf(item);
-    // 做hack处理
     var length = array.length;
     for (var i=0; i<length; i++) if (array[i] === item) return i;
     return -1;
@@ -418,7 +421,14 @@ window._ = {
   // Returns the first function passed as an argument to the second, 
   // allowing you to adjust arguments, run code before and after, and 
   // conditionally execute the original function.
-  // 放弃，没卵用
+  /**
+   * wrap会返回一个函数，这个函数是一个闭包函数
+   * 这个会导致wrap函数不会销毁一直存在，原因是返回的函数会引用原来函数的 arguments 对象
+   * 这个函数的功能主要是返回函数，这个函数是原函数的参数很返回值的重新运用
+   * 这个和 currying 化还不太一样，currying是返回一个函数的各种不同参数的副本以供调用
+   * 这个函数是用原函数的处理逻辑和返回值重新组织逻辑代码
+   * 这个函数，我认为作用可能不大。但是也有运用的场景。 
+   */
   wrap : function(func, wrapper) {
     return function() {
       var args = [func].concat(_.toArray(arguments));
@@ -436,20 +446,21 @@ window._ = {
   },
   
   // Retrieve the values of an object's properties.
-  // 返回对象的value集合，原理同上
+  // 返回对象的value组成的数组
   values : function(obj) {
     return _.pluck(obj, 'value');
   },
   
   // Extend a given object with all of the properties in a source object.
   // 把源对象的可枚举属性，扔到目标对象上(浅拷贝)
+  // 这个是会改原对象的，和这个用法的效果是一样的：Object.assign(sourceObj, { yourAttr: yourValue });
   extend : function(destination, source) {
     for (var property in source) destination[property] = source[property];
     return destination;
   },
   
   // Create a (shallow-cloned) duplicate of an object.
-  // 浅拷贝，类似于Object.assign({},obj)
+  // 浅拷贝，这个就是这个用法，创建新对象副本：Object.assign({},obj)
   // underscore一直没有提供深拷贝方法，作者认为做不完美，所以不做
   clone : function(obj) {
     return _.extend({}, obj);
@@ -513,7 +524,11 @@ window._ = {
   
   // Generate a unique integer id (unique within the entire client session).
   // Useful for temporary DOM ids.
-  // 在_对象上，挂载一个累加的id号，可以拼上前缀
+  /**
+   * 在_对象上，挂载一个累加的id号，可以拼上前缀
+   * 这个应该可以作为 react 或者 vue 的 loop 里key的解决方案
+   * 因为是自增的一个全局变量，不会有重复的，销毁了会累计叠加。
+   */ 
   uniqueId : function(prefix) {
     var id = this._idCounter = (this._idCounter || 0) + 1;
     return prefix ? prefix + id : id;
