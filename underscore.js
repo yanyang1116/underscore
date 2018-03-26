@@ -6,78 +6,54 @@
 // For all details and documentation:
 // http://documentcloud.github.com/underscore
 
-
 /**
- * 0.4.7:
- * ~ 优化了一些方法：
- *   compose 不再直接对参数操作了。
- *   这个地方展开来讲，虽然参数是按值传递的，但是大部分情况下实际是展现处引用传递的结果。所以，对于参数的操作会影响传入的实参
- *   有的时候这个是不想这样的。所以，应该在函数内部新拷贝（浅拷贝或者深拷贝）这个参数，再进行操作比较合适
- *   
- *   isEqual 增加了Data实例的比较，比较数组内容前，先比较长度
- *   对keys方法进行了优化，并且运用到了一些方法里: each isEmpty functions
- *   增加了类型判断 isNaN isDate isNull
- *
- * 0.5.0
- * ~ 增加了isReg，他们全都基于Object.toString。同时所有的类型监测仍然工作，只是他们没单独做成一个方法，在定义的时候
- * ~ bindAll 现在传参位置发生了变化
- * ~ functions 本来只是一个内置方法，只返回 _ 的方法名，现在可以对其他对象使用了
- *
- * 0.5.1
- * ~ each 对length = 0 的数组也生效
- * ~ 对各种迭代方法里，array的length做了数字监测，防止length被重写
- * ~ 对各种迭代方法里，所有对于原生方法都做了 isFunction 检查，防止被重写成别的类型报错
- * ~ 大量的对于，通篇反复调用的方法和字段，做了cache优化
- * ~ 定义了一个 isArguments 的类型监测，具体大概是 length是数字，不可枚举，对象本身不是数组
- * ~ 由于做了array.length isNumber的监测，isNumber 方法和其他一系列方法，用闭包的方式后调用实现
- *   这个部分会在下文类型检测的地方重点论述
+ * update to 0.6.0:
  * 
- * 0.5.2
- * ~ 增加了 tap 方法，该方法主要用于在链式调用种执行特定方法
- * ~ 居然又放弃了闭包对于类型检测的实现，同时，放弃了使用Objcet的toString方法来监测类型
- *   改为了检查某些方法是否存在，理由是速度更加快，当然安全性会少一点
- *   关于这个内容是这样的:
-     var i = 5;
-     var _ = {};
- *   for (; i < 5; i++) {
- *       var _[i] = function() {alert(i)}
- *   }
- *   这里当 _[1]; 调用的时候，这个i一直都会是5，因为去访问全局变量i
- *   也就是说，这个块级作用域是没用的，是假的
- *   可以这么hack
- *   for (; i < 5; i++) {
- *       (function() {
- *         var _[i] = function() {alert(i)}
- *       })()
- *   }
- *
- *   当然，下面的赋值动作是会符合预期的
- *   for (; i < 5; i++) {
- *       var _[i] = i;
- *   }
- *   状态被保留了
- * ~ 
+ * 1. 新增了以下方法：
+ * noConflict、lastIndexOf、compose、identity、first、last、rest
+ * functions、chain、tap、mixin、times、range、reduceRight
+ * isNaN、isDate、isNull、isReg、isEmpty、isString、isNumber
+ * ****************************************************************************
  * 
- * 0.5.3-0.5.8
- * ~ 对 template 方法做了一些调整不过我没怎么看这个东东
- * ~ oop 里做了写小优化，不再对参数直接操作
- * ~ 继续对类型检测方法进行细节优化，对通篇的方法都进行必要的类型检测
- *
- * 0.6.0
- * ~ 做了each的缓存
- * ~ 优化了函数名称，同时对注释里的别名进行了修改
- * ~ Object.keys 方法被引入，原先没有考虑用这个，都是直接for in 出来的
- * ~ reduceRight用了reduce方法重写了，以前用了each有点啰嗦，本质实现是一样的
- *   同样的还有include
- * ~ 增加了es5 原生的 isArray 判断
- * ~ 增加了 工具函数 times，用来调用指定次数的函数
- * ~ 对原生方法集中提取，塞入各个方法里，重写整理
- * ~ isEmpty 又优化了一下，具体下文类型检测要好好看看
- * ~ 在include里干掉了fnc类型？下文仔细看看
- * ~ bind函数默认使用空对象？以前是this
- * ~ 增加了_mixin工具函数
- * ~ 【对于对象和数组的处理，现在统一原则是能枚举，同时是自身属性】 【important】 【important】 【important】
+ * 2. 重写了核心函数【each】
+ * ****************************************************************************
+ * 
+ * 3. 支持了oop:
+ * _ 被定义为 : ƒ (obj) { return new wrapper(obj); }
+ * 因为是这样定义的 var _ = root._ = function(obj) { return new wrapper(obj); };
+ * 
+ * a. _() 执行 返回 wrapper方法的执行 => { _wrapped: undefined };
+ * 举例子：_('test','test2') => wrapper { _wrapped: "test" };
+ * 第二个参数是没用，是因为 wrapper 函数是这么定义的  var wrapper = function(obj) { this._wrapped = obj; };
+ * 
+ * b. 本质上就是为了返回一个对象，这个对象有一个 _wrapped属性，属性被赋值为调用时候的第一个实参
+ * new 是为了改变 wrapper 函数的 this 指针，让他指向被创建的对象，以便往这个对象上正确的挂在属性
+ * 
+ * c. 截止目前，确实就是返回的就是传入参数的那个单纯的对象，但是下文有这么一些定义，大致意思是 wrapper.prototype = _; 
+ * 新建出来的对象就有了 _ 上所有的属性和方法
+ * 
+ * d. 所以，实现了这样的调用方式 _([1, 2, 3, 3, 2]).uniq(); // 返回 { _wrapper: [1, 2, 3, 4, 5] }，上面有 _ 的方法
+ * 
+ * e. 总之，具体还得看下文的定义
+ * ****************************************************************************
+ * 
+ * 4. 增加了对commonJs的支持：
+ * if (typeof exports !== 'undefined') exports._ = _;
+ * commonJs 会注入一个 exports 对象，通过 把属性和方法挂在 exports 上，暴露出去
+ * 支持这个可以更好的服务于 node 环境，
+ * 不用关心太多，对于 webpack + babel 而言，require 和 important 都会有很好的兼容处理
+ * 
+ * ****************************************************************************
+ * 
+ * 5. 处理的别名
+ * ****************************************************************************
+ * 
+ * 6. 其他若干优化
+ * ****************************************************************************
+ * 
  */
+
+
 (function() {
   // ------------------------- Baseline setup ---------------------------------
 
@@ -175,6 +151,7 @@
 
   // The right-associative version of reduce, also known as foldr. Uses
   // Delegates to JavaScript 1.8's native reduceRight if available.
+  // reduceRight的polyfill
   _.reduceRight = function(obj, memo, iterator, context) {
     if (nativeReduceRight && obj.reduceRight === nativeReduceRight) return obj.reduceRight(_.bind(iterator, context), memo);
     var reversed = _.clone(_.toArray(obj)).reverse();
@@ -239,11 +216,8 @@
 
   // Determine if a given value is included in the array or object using '==='.
   _.include = function(obj, target) {
-    // 有原生则是数组，则用原生数组方法
     if (nativeIndexOf && obj.indexOf === nativeIndexOf) return obj.indexOf(target) != -1;
     var found = false;
-    // 否则都直接 each 出来
-    // 记得上一版本的实现好像fnc也可以，算了忘记了，反正优化了,这个没毛病
     each(obj, function(value) {
       if (found = value === target) _.breakLoop();
     });
@@ -329,19 +303,31 @@
   // Get the first element of an array. Passing "n" will return the first N
   // values in the array. Aliased as "head". The "guard" check allows it to work
   // with _.map.
+  /**
+   * 返回一个数组的第一个，或者头几个
+   * 这个方法，并没有太大的方便之处，相对于原生的实现方法：arr[0]，arr.slice(0, n);
+   * 不过也许放到 underscore 的 chain 里，会有点用吧，显得美观点
+   */
   _.first = function(array, n, guard) {
+    // guard用来检查是否能使用map函数，如果传入真值就什么都不管了，返回第一个值（绝大多数情况下，都不会传guard，不用关心）
+    // 传入了第二个参数 n，则使用slice处理数组，否则返回第一个
     return n && !guard ? slice.call(array, 0, n) : array[0];
   };
 
   // Returns everything but the first entry of the array. Aliased as "tail".
   // Especially useful on the arguments object. Passing an "index" will return
   // the rest of the values in the array from that index onward. The "guard"
-   //check allows it to work with _.map.
+  // check allows it to work with _.map.
+  /**
+   * 类似上面的first
+   * 默认显示除去第一项之后的剩余项目，传入参数后就是显示传入参数坐标之后的剩余项目
+   */
   _.rest = function(array, index, guard) {
     return slice.call(array, _.isUndefined(index) || guard ? 1 : index);
   };
 
   // Get the last element of an array.
+  // 拿数组的最后一项
   _.last = function(array) {
     return array[array.length - 1];
   };
@@ -408,24 +394,42 @@
 
 
   // Delegates to JavaScript 1.6's native lastIndexOf if available.
+  /**
+   * 从数组的末尾开始找，直到找到第一个与传入值相等的值，并返回坐标
+   * 其实就是 lastIndexOf 的一个 polyfill
+   */ 
   _.lastIndexOf = function(array, item) {
+    // 有原生的 lastIndexOf ，而且传入对象上没有主动写一个 lastIndexOf 来覆盖原生的，就调用原生的来处理
     if (nativeLastIndexOf && array.lastIndexOf === nativeLastIndexOf) return array.lastIndexOf(item);
     var i = array.length;
-    while (i--) if (array[i] === item) return i;
+    while (i--) if (array[i] === item) return i; // 
     return -1;
   };
 
   // Generate an integer Array containing an arithmetic progression. A port of
   // the native Python range() function. See:
   // http://docs.python.org/library/functions.html#range
+  /**
+   * 这个是 python 的 range 版本
+   * _.range(10); // => [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
+   * _.range(1, 11); // => [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+   * _.range(0, 30, 5); // => [0, 5, 10, 15, 20, 25]
+   */
   _.range = function(start, stop, step) {
     var a     = _.toArray(arguments);
-    var solo  = a.length <= 1;
+    var solo  = a.length <= 1; // 没给参数或者只给了一个参数 => true ,否则 => false
+
+    /**
+     * 如果给了一个参数或者没给的话，这个 start 是 0，不然就是给的那个给定的参数的第一个作为起点
+     * 停止针对只有一个参数或者没有参数的情况，他会被尝试赋值成 arguments[0]，也就是说没传参数是 undef，有停止参数就是停止参数
+     * 步伐幅度是step参数或者不给就是1
+     */
     var start = solo ? 0 : a[0], stop = solo ? a[0] : a[1], step = a[2] || 1;
-    var len   = Math.ceil((stop - start) / step);
-    if (len <= 0) return [];
+
+    var len = Math.ceil((stop - start) / step); // 向上取整，这里如果 stop 是 undef，这个len会是NaN，一下行会【报错】
+    if (len <= 0) return []; // 这个 len 有可能是 NaN，会【报错】，以后版本应该修复了这个问题
     var range = new Array(len);
-    for (var i = start, idx = 0; true; i += step) {
+    for (var i = start, idx = 0; true; i += step) { // 下来就是填充的工作了
       if ((step > 0 ? i - stop : stop - i) >= 0) return range;
       range[idx++] = i;
     }
@@ -438,9 +442,11 @@
   _.bind = function(func, obj) {
     var args = _.rest(arguments, 2);
     return function() {
-      // 这里本来是 window
-      // 现在改成了这个临时内存 可能是为了防止主动去找到一些方法，或者操作改变外部作用域的一些状况
-      // 这个可以理解为是一种兜底保护行为
+      /**
+       * 一处优化：
+       * 这里 apply 本来是 第一个参数是 (obj || window)
+       * 现在改成了这个 {}，可能是为了防止主动去找到一些 window 上的同名方法
+       */
       return func.apply(obj || {}, args.concat(_.toArray(arguments)));
     };
   };
@@ -479,13 +485,26 @@
 
   // Returns a function that is the composition of a list of functions, each
   // consuming the return value of the function that follows.
+  /** 
+   * 这个方法接受一堆函数，返回一个闭包函数
+   * 返回的函数可以接受任意参数，这些参数会作为传入方法中左右边的第一个方法的实参
+   * 然后从右往左运行函数
+   * 除了最右边的那个函数外能接受调用时候的参数作为对应的多个参数外，之后运行的函数值接受一个参数
+   * 这个参数就是前面那个函数的返回值
+   * 可以类比一下 promise 里 then 的效果
+   */
   _.compose = function() {
     var funcs = _.toArray(arguments);
     return function() {
       var args = _.toArray(arguments);
+      // 这里是一个迭代，从大到小的迭代
       for (var i=funcs.length-1; i >= 0; i--) {
+        // 迭代运行中，后面的方法只接受一个参数了，这个参数就是前一个函数的返回值
         args = [funcs[i].apply(this, args)];
       }
+      // 最终如果运行闭包函数的话，他会返回一个值，这里之所以还要用[0]取一下的原因是
+      // 你看那个地方为了让迭代的 apply 能运行，返回了一个 [funcs[i].apply(this, args)]
+      // 所以要取一下值
       return args[0];
     };
   };
@@ -494,10 +513,10 @@
 
   // Retrieve the names of an object's properties.
   // Delegates to ECMA5's native Object.keys
-  _.keys = nativeKeys || function(obj) { // 用原生的
-    if (_.isArray(obj)) return _.range(0, obj.length); // 这个就用range处理了，从0开始 step为1，长度为obj.length
+  _.keys = nativeKeys || function(obj) {
+    if (_.isArray(obj)) return _.range(0, obj.length);
     var keys = [];
-    for (var key in obj) if (hasOwnProperty.call(obj, key)) keys.push(key); // 能枚举，又是自身属性，则处理出来
+    for (var key in obj) if (hasOwnProperty.call(obj, key)) keys.push(key);
     return keys;
   };
 
@@ -507,7 +526,7 @@
   };
 
   // Return a sorted list of the function names available on the object.
-  // 在一维上，把对象的方法反出来
+  // 返回一个第一维下，所有类型是 function 的 key 组成的数组
   _.functions = function(obj) {
     return _.filter(_.keys(obj), function(key){ return _.isFunction(obj[key]); }).sort();
   };
@@ -526,13 +545,14 @@
 
   // Invokes interceptor with the obj, and then returns obj.
   // The primary purpose of this method is to "tap into" a method chain, in order to perform operations on intermediate results within the chain.
-  // 这个用于链式调用的时候，执行传入方法，同时不打断链式调用。因为return 的是 obj，obj进过chain oop之后是一个 对象实例，同时 __proto__ 拥有一切方法
+  // 这个主要用于链式调用（chain）的时候，执行传入方法，同时不打断链式调用。
   _.tap = function(obj, interceptor) {
-    interceptor(obj);
-    return obj;
+    interceptor(obj); // 这个是另外要执行的函数
+    return obj; // 返回的是obj，如果是在一个 chain 里的话会被处理成 { _wrapper: obj, _chain: true }
   };
 
   // Perform a deep comparison to check if two objects are equal.
+  // 做了一些优化比值
   _.isEqual = function(a, b) {
     // Check object identity.
     if (a === b) return true;
@@ -641,12 +661,17 @@
 
   // Run Underscore.js in noConflict mode, returning the '_' variable to its
   // previous owner. Returns a reference to the Underscore object.
+  /** 
+   * 这个函数用处不大，主要是为了方式_符号被占用了 
+   * 就需要把underscore复制给别的变量来使用
+   */
   _.noConflict = function() {
-    root._ = previousUnderscore;
-    return this;
+    root._ = previousUnderscore; // 如果全局环境有_， 则原先的_任然用_占位
+    return this; // 返回 this 对象，给新的变量名保存
   };
 
   // Keep the identity function around for default iterators.
+  // 一个返回原值的通用方法，作用其实主要是用来某些条件下替代迭代器，是通篇的结构整洁一点
   _.identity = function(value) {
     return value;
   };
@@ -658,6 +683,7 @@
   };
 
   // Break out of the middle of an iteration.
+  // 这里优化了一下，这个方法应该内部使用吧，为了格式更加统一一点
   _.breakLoop = function() {
     throw breaker;
   };
@@ -725,28 +751,36 @@
   // If Underscore is called as a function, it returns a wrapped object that
   // can be used OO-style. This wrapper holds altered versions of all the
   // underscore functions. Wrapped objects may be chained.
+  // 定义 wrapper 函数，这个函数类似于一个构造函数
   var wrapper = function(obj) { this._wrapped = obj; };
 
   // Helper function to continue chaining intermediate results.
+  // 这个函数当有 chain 的时候，会返回 wrapper 包裹的原来的obj，所以可以链式调用
+  // 如果想合理的一直 . 下去，应该考虑对 obj 的引用直接修改 
   var result = function(obj, chain) {
     return chain ? _(obj).chain() : obj;
   };
 
   // A method to easily add functions to the OOP wrapper.
-  // 这里把对象处理到原形对象上
+  /**
+   * 这个函数在 mixin 的时候有用到
+   * 主要功能是将传入的方法名和具体方法，赋值到 wrapper 函数的原型链上
+   * 同时，最后 返回 result 执行结果是实现 oop 的核心之一，会根据 chain ，还有 apply 参数的形式做相关处理
+   */
   var addToWrapper = function(name, func) {
     wrapper.prototype[name] = function() {
       var args = _.toArray(arguments);
-      unshift.call(args, this._wrapped);
+      unshift.call(args, this._wrapped); // 重新组织参数形式
       return result(func.apply(_, args), this._chain);
     };
   };
 
   // Add all of the Underscore functions to the wrapper object.
-  // 先挂所有 _ 方法
+  // _ 上自己的方法先做一个 mixin 处理，会走一下 addToWrapper 函数来实现 oop 的功能
   _.mixin(_);
 
   // Add all mutator Array functions to the wrapper.
+  // 把 array 常用方法也放到 wrapper 上，这样会 oop 对数组的处理更加好
   each(['pop', 'push', 'reverse', 'shift', 'sort', 'splice', 'unshift'], function(name) {
     var method = ArrayProto[name];
     wrapper.prototype[name] = function() {
@@ -756,6 +790,7 @@
   });
 
   // Add all accessor Array functions to the wrapper.
+  // 和上面的是差不多的，只是这里处理的是不会改变原来数组的情况，所以这里把方法的返回结果给 return 出来
   each(['concat', 'join', 'slice'], function(name) {
     var method = ArrayProto[name];
     wrapper.prototype[name] = function() {
@@ -764,12 +799,29 @@
   });
 
   // Start chaining a wrapped Underscore object.
+  /**
+   * 如果使用了 chain 方法的话，会在 new 出来的 wrapper 对象里，放一个 _chain 的 key
+   * 这个 key 会在 上文中的 result 函数中判断，用来返回合适的值，连续的链式调用
+   * chain方法本身是返回 _ 本身的，本质上单纯是为了 打一个 _chain 标记上去
+   * 大概效果是这样的：
+   * var stooges = [{name : 'curly', age : 25}, {name : 'moe', age : 21}, {name : 'larry', age : 23}];
+   * var youngest = _(stooges).chain()
+   * .sortBy(function(stooge){ return stooge.age; })
+   * .map(function(stooge){ return stooge.name + ' is ' + stooge.age; })
+   * .first()
+   * .value();
+   * => "moe is 21"
+   */
   wrapper.prototype.chain = function() {
     this._chain = true;
     return this;
   };
 
   // Extracts the result from a wrapped and chained object.
+  // 这个方法是直接把 new 出来的 wrapper 对象里，_wrapped 的值给弄出来
+  // 通常配合 oop 和 chain 使用，用来拿到最后的结果
+  // _([1, 2, 3]).value(); => [1, 2, 3]
+  // _([1,2,3]).chain().reverse().first().value() => 3
   wrapper.prototype.value = function() {
     return this._wrapped;
   };
