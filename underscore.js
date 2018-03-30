@@ -513,15 +513,30 @@
   // Generate an integer Array containing an arithmetic progression. A port of
   // the native Python range() function. See:
   // http://docs.python.org/library/functions.html#range
-  
+    /**
+   * 这个是 python 的 range 版本
+   * _.range(10); // => [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
+   * _.range(1, 11); // => [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+   * _.range(0, 30, 5); // => [0, 5, 10, 15, 20, 25]
+   */
   _.range = function(start, stop, step) {
     var a     = _.toArray(arguments);
-    var solo  = a.length <= 1;
+    var solo  = a.length <= 1;// 没给参数或者只给了一个参数 => true ,否则 => false
+      /**
+     * 如果给了一个参数或者没给的话，这个 start 是 0，不然就是给的那个给定的参数的第一个作为起点
+     * 停止针对只有一个参数或者没有参数的情况，他会被尝试赋值成 arguments[0]，也就是说没传参数是 undef，有停止参数就是停止参数
+     * 步伐幅度是step参数或者不给就是1
+     */
     var start = solo ? 0 : a[0], stop = solo ? a[0] : a[1], step = a[2] || 1;
+    /*
+     * 向上取整，这里如果 stop 是 undef，这个len会是NaN，一下行会【报错】
+     * 这个主要原因是上文用 length 来决定 solo ，从而决定 start、stop、step 三个参数
+     * 那我填 undef ，或者其他不合理的值，都会对他造成影响: _.range(2, 'null'); => 报错
+     */
     var len   = Math.ceil((stop - start) / step);
     if (len <= 0) return [];
     var range = new Array(len);
-    for (var i = start, idx = 0; true; i += step) {
+    for (var i = start, idx = 0; true; i += step) {  // 下来就是填充的工作了
       if ((step > 0 ? i - stop : stop - i) >= 0) return range;
       range[idx++] = i;
     }
@@ -531,8 +546,11 @@
 
   // Create a function bound to a given object (assigning 'this', and arguments,
   // optionally). Binding with arguments is also known as 'curry'.
+  /**
+   * 原生 bind 的 polyfill，返回一个闭包函数
+   */ 
   _.bind = function(func, obj) {
-    var args = _.rest(arguments, 2);
+    var args = _.rest(arguments, 2); // 这个变量环境会被保存下来引用，不会销毁
     return function() {
       return func.apply(obj || {}, args.concat(_.toArray(arguments)));
     };
