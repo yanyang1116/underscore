@@ -22,10 +22,12 @@ window._ = {
         if (obj.forEach) { 
         obj.forEach(iterator, context);
       } else if (obj.length) {
-        // 数组处理, 类型校验略显不足
-        // 下s文都用了这个函数，其实少了最后一个参数迭代对象本身，下文不再论述。
-        // s实际使用中，后面两个形参都是引用
-        // 下面的这个方法是整个 underscore 的核心方法，本质上是当前函数的 arguments 对象和相关变量环境的维持穿插
+        /**
+         * 数组处理, 类型校验略显不足
+         * 下文都用了这个函数，其实少了最后一个参数迭代对象本身，下文不再论述。
+         * 实际使用中，后面两个形参都是引用
+         * 下面的这个方法是整个 underscore 的核心方法，本质上是当前函数的 arguments 对象和相关变量环境的维持穿插
+         */
         for (var i=0; i<obj.length; i++) iterator.call(context, obj[i], i);
       } else if (obj.each) {
         // 这段可能为了处理 _ 自身情况？后来版本删了
@@ -89,8 +91,10 @@ window._ = {
     if (obj.filter) return obj.filter(iterator, context);
     var results = [];
     _.each(obj, function(value, index) {
-      // 细节：这个地方，用强制多态来处理。考虑到了多种情况的返回值，不过个人认为写清楚会增强语意
-      // 是符合真实的 filter 的效果的
+      /**
+       * 细节：这个地方，用强制多态来处理。考虑到了多种情况的返回值，不过个人认为写清楚会增强语意
+       * 是符合真实的 filter 的效果的
+       */
       if (iterator.call(context, value, index)) results.push(value);
     });
     return results;
@@ -150,8 +154,10 @@ window._ = {
   },
   
   // Invoke a method with arguments on every item in a collection.
-  // 对集合中的每个目标对象 调用 目标方法，多余的参数为方法的实参。
-  // 返回每个执行结果的合集
+  /**
+   * 对集合中的每个目标对象 调用 目标方法，多余的参数为方法的实参。
+   * 返回每个执行结果的合集
+   */
   invoke : function(obj, method) {
     // 抽取参数，2 因为除去 目标对象 和 目标方法 之外的才是目标方法的实参
     var args = _.toArray(arguments).slice(2); 
@@ -170,12 +176,16 @@ window._ = {
   },
   
   // Return the maximum item or (item-based computation).
-  // 尝试对集合中每个目标对象，或者
-  // 经过迭代之后的返回值，取最大值
-  // 里面有一个 迭代壁纸的 computed 可以看看
+  /**
+   * 尝试对集合中每个目标对象，或者
+   * 经过迭代之后的返回值，取最大值
+   * 里面有一个 迭代壁纸的 computed 可以看看
+   */ 
   max : function(obj, iterator, context) {
-    // 没有迭代器，同时传入了一个数组，则直接尝试对数组比较得出最大值
-    // 如果数组中有 经过强转后还是 NaN 的对象，则返回NaN
+    /**
+     * 没有迭代器，同时传入了一个数组，则直接尝试对数组比较得出最大值
+     * 如果数组中有 经过强转后还是 NaN 的对象，则返回NaN
+     */
     if (!iterator && _.isArray(obj)) return Math.max.apply(Math, obj);
     var result;
 
@@ -188,12 +198,11 @@ window._ = {
        * 下面的 == null 
        * 其实考虑了返回undef 和 null还有未初始化的情况，值得学习
        * 写清楚增强语意比较好
+       * 这个比值方法的对象里，computed是用来比较的，value是最后输出结果的
+       * 在 >= 的比较里，会进行强制多态的转换
+       * 不过这个方法本质上是为了快速得出数字的最大值，所以无需关心 
+       * 传入对象的情况也很少
        */
-
-      // 这个比值方法的对象里，computed是用来比较的，value是最后输出结果的
-      // 在 >= 的比较里，会进行强制多态的转换
-      // 不过这个方法本质上是为了快速得出数字的最大值，所以无需关心 
-      // 传入对象的情况也很少
       if (result == null || computed >= result.computed) result = {value : value, computed : computed};
     });
     return result.value;
@@ -212,10 +221,12 @@ window._ = {
   },
   
   // Sort the object's values by a criteria produced by an iterator.
-  // 迭代器的返回值处理之后，这些迭代对象本身应该如何排序
-  // sort方法熟悉一下:
-  // arr.sort((a,b) => {return 0});
-  // 这个只要return里的结果通过多态后，不是正数，则正在比较的放在左边，最终达到重新排序的目的
+  /**
+   * 迭代器的返回值处理之后，这些迭代对象本身应该如何排序
+   * sort方法熟悉一下:
+   * arr.sort((a,b) => {return 0});
+   * 这个只要return里的结果通过多态后，不是正数，则正在比较的放在左边，最终达到重新排序的目的
+   */
   sortBy : function(obj, iterator, context) {
     // 这里假设了一个固定顺序的数组，一个是原来的值，一个是迭代器处理之后的值
     return _.pluck(_.map(obj, function(value, index) {
@@ -223,8 +234,10 @@ window._ = {
         value : value,
         criteria : iterator.call(context, value, index)
       };
-      // 上面处理成了一个大数组
-      // 然后进入sort方法专门只是比较criteria然后返回一个经过排序后的数组
+      /**
+       * 上面处理成了一个大数组
+       * 然后进入sort方法专门只是比较criteria然后返回一个经过排序后的数组
+       */
     }).sort(function(left, right) {
       var a = left.criteria, b = right.criteria;
       return a < b ? -1 : a > b ? 1 : 0;
@@ -234,8 +247,7 @@ window._ = {
   
   // Use a comparator function to figure out at what index an object should
   // be inserted so as to maintain order. Uses binary search.
-  // 这个方法是说，如果要插入一个值，这个值会按照sort方法排在现有队列的什么位置
-  // 返回坐标，应该没什么卵用实战中
+  // 这个方法是说，如果要插入一个值，这个值会按照sort方法排在现有队列的什么位置，返回坐标，应该没什么卵用实战中
   sortedIndex : function(array, obj, iterator) {
     iterator = iterator || function(val) { return val; };
     var low = 0, high = array.length;
@@ -253,9 +265,11 @@ window._ = {
   },
   
   // Convert anything iterable into a real, live array.
-  // 尝试将所有类型转化成数组对象
-  // 这个想到类数组转数组的es6方法Array.from
-  // 大多是一维上的尝试转数组
+  /**
+   * 尝试将所有类型转化成数组对象
+   * 这个想到类数组转数组的es6方法Array.from
+   * 大多是一维上的尝试转数组
+   */
   toArray : function(iterable) {
     if (!iterable) return []; // 多态假值，直接空
     if (_.isArray(iterable)) return iterable; // 是数组就还是数组
@@ -308,8 +322,7 @@ window._ = {
   
   // Produce a duplicate-free version of the array. If the array has already
   // been sorted, you have the option of using a faster algorithm.
-  // 基于 === 的去重，
-  // 如果知道数组以及排序过了，就用更快的处理方式: isSorted 传true
+  // 基于 === 的去重，如果知道数组以及排序过了，就用更快的处理方式: isSorted 传true
   uniq : function(array, isSorted) {
     // inject 就是 reduce，初始值是 []
     return _.inject(array, [], function(memo, el, i) {
@@ -317,9 +330,10 @@ window._ = {
        * es6有新的去重方式：
        * var arr = [1,2,{a:1},{a:1}];
        * var resultarr = [...new Set(arr)]; =>  [1,2,{a:1},{a:1}] 真实有效，对引用类型也管用
+       *
+       * 如果排序过，直接顺序比值，如果有不同则推入结果
+       * 这里的!=，后面版本有修正，不然就不是基于 === 的比较了
        */
-      // 如果排序过，直接顺序比值，如果有不同则推入结果
-      // 这里的!=，后面版本有修正，不然就不是基于 === 的比较了
       if (0 == i || (isSorted ? _.last(memo) != el : !_.include(memo, el))) memo.push(el);
       return memo;
     });
@@ -353,8 +367,10 @@ window._ = {
     var length = _.max(_.pluck(args, 'length')); // 最大长度来决定输出的最终长度和迭代的次数
     var results = new Array(length);
 
-    // 下面这个地方，是对一维上的每一项，拿到精准的key返回出来
-    // 然后没想迭代赋值，就形成了最终的结果
+    /**
+     * 下面这个地方，是对一维上的每一项，拿到精准的key返回出来
+     * 然后没想迭代赋值，就形成了最终的结果
+     */
     for (var i=0; i<length; i++) results[i] = _.pluck(args, String(i)); // 下标用字符串拿
 
     return results;
@@ -375,14 +391,18 @@ window._ = {
   
   // Create a function bound to a given object (assigning 'this', and arguments,
   // optionally). Binding with arguments is also known as 'curry'.
-  // 这里就是 function 的 bind 方法
-  // bind 也可以认为是一个 curry 函数，它只会去给传入的纯函数创造不同上下文，作为一个副本
+  /**
+   * 这里就是 function 的 bind 方法
+   * bind 也可以认为是一个 curry 函数，它只会去给传入的纯函数创造不同上下文，作为一个副本
+   */
   bind : function(func, context) {
     if (!context) return func; // 没上下文，直接返回
     var args = _.toArray(arguments).slice(2); // 多余的认为是参数
 
-    // 返回闭包，保持了 args、context 的状态来供访问
-    // 认为是副本的原因是，返回的是一个匿名函数封包，不会影响原函数
+    /** 
+     * 返回闭包，保持了 args、context 的状态来供访问
+     * 认为是副本的原因是，返回的是一个匿名函数封包，不会影响原函数
+     */
     return function() {
       var a = args.concat(_.toArray(arguments));
       return func.apply(context, a);
@@ -392,13 +412,14 @@ window._ = {
   // Bind all of an object's methods to that object. Useful for ensuring that 
   // all callbacks defined on an object belong to it.
   // 为多个方法 bind 相同的上下文，批量操作
-  // _.bindAll(*methodNames, context)
   bindAll : function() {
     var args = _.toArray(arguments); // 拿参
     var context = args.pop(); // 返回最后一个实参(上下文对象), pop已经删除了这个最后一项了
     _.each(args, function(methodName) { // 迭代参数
-      // 上下文的方法名 使用 bind 绑定this
-      // 不过这里为什么不把上下文对象本身排除掉，其实向上仔细看，pop方法已经删掉了上下文对象了
+      /**
+       * 上下文的方法名 使用 bind 绑定 this
+       * 不过这里为什么不把上下文对象本身排除掉，其实向上仔细看，pop方法已经删掉了上下文对象了
+       */
       context[methodName] = _.bind(context[methodName], context);
     });
   },
@@ -452,24 +473,30 @@ window._ = {
   },
   
   // Extend a given object with all of the properties in a source object.
-  // 把源对象的可枚举属性，扔到目标对象上(浅拷贝)
-  // 这个是会改原对象的，和这个用法的效果是一样的：Object.assign(sourceObj, { yourAttr: yourValue });
+  /**
+   * 把源对象的可枚举属性，扔到目标对象上(浅拷贝)
+   * 这个是会改原对象的，和这个用法的效果是一样的：Object.assign(sourceObj, { yourAttr: yourValue });
+   */
   extend : function(destination, source) {
     for (var property in source) destination[property] = source[property];
     return destination;
   },
   
   // Create a (shallow-cloned) duplicate of an object.
-  // 浅拷贝，这个就是这个用法，创建新对象副本：Object.assign({},obj)
-  // underscore一直没有提供深拷贝方法，作者认为做不完美，所以不做
+  /**
+   * 浅拷贝，这个就是这个用法，创建新对象副本：Object.assign({},obj)
+   * underscore一直没有提供深拷贝方法，作者认为做不完美，所以不做
+   */ 
   clone : function(obj) {
     return _.extend({}, obj);
   },
   
   // Perform a deep comparison to check if two objects are equal.
-  // 这里是一个非常好的深度比较方法，比较值是否相等
-  // 即使是引用类型，只要他们表示的值相等。也报相等
-  // 以后版本这个比较被反复修改过，可以处理的比较符合容易想到的逻辑效果
+  /** 
+   * 这里是一个非常好的深度比较方法，比较值是否相等
+   * 即使是引用类型，只要他们表示的值相等。也报相等
+   * 以后版本这个比较被反复修改过，可以处理的比较符合容易想到的逻辑效果
+   */
   isEqual : function(a, b) {
     // Check object identity.
     if (a === b) return true; // 全等就直接过
@@ -478,8 +505,10 @@ window._ = {
     if (atype != btype) return false; // 类型都不同就挂了
     // Basic equality test (watch out for coercions).
 
-    // 强制多态下相等，就直接过了。这里要熟悉各种多态的默认处理逻辑。主要是调用toString方法。
-    // 所以说，fnc可以在这里判断是否相等，不过这里是tostring后判断，所以基于对fnc的判断要 toSting 后完全相等
+    /**
+     * 强制多态下相等，就直接过了。这里要熟悉各种多态的默认处理逻辑。主要是调用toString方法。
+     * 所以说，fnc可以在这里判断是否相等，不过这里是tostring后判断，所以基于对fnc的判断要 toSting 后完全相等
+     */
     if (a == b) return true;
 
     // One of them implements an isEqual()?
